@@ -1,0 +1,176 @@
+#!/usr/bin/python3
+
+
+from typing import Deque, Dict
+
+import collections
+import os
+import sys
+
+import pulsectl # type: ignore
+
+
+class AutoSurrounder(object):
+    def __init__(self) -> None:
+        self.event_queue: Deque[pulsectl.pulsectl.PulseEventInfo] = collections.deque()
+        self.pulse: pulsectl.Pulse = None
+        self.multichannel_sink_inputs: Dict[int, set[int]] = collections.defaultdict(
+            set
+        )
+        self.sink_cache: Dict[int, pulsectl.pulsectl.PulseSinkInfo] = {}
+        self.card_cache: Dict[int, pulsectl.pulsectl.PulseCardInfo] = {}
+        self.saved_card_profiles: Dict[int, pulsectl.pulsectl.PulseCardProfileInfo] = {}
+
+    def get_sink(self, sink_index: int) -> pulsectl.pulsectl.PulseSinkInfo:
+        if sink_index not in self.sink_cache:
+            for x in self.pulse.sink_list():
+                self.sink_cache[x.index] = x
+        return self.sink_cache.get(sink_index)
+
+    def get_card(self, card_index: int) -> pulsectl.pulsectl.PulseCardInfo:
+        if card_index not in self.card_cache:
+            for x in self.pulse.card_list():
+                self.card_cache[x.index] = x
+        return self.card_cache.get(card_index)
+
+    def get_sink_input(
+        self, sink_input_index: int
+    ) -> pulsectl.pulsectl.PulseSinkInputInfo:
+        res = [x for x in self.pulse.sink_input_list() if x.index == sink_input_index]
+        return res[0] if res else None
+
+    def process_event(self, ev: pulsectl.pulsectl.PulseEventInfo) -> None:
+        def is_multichannel(sink_input: pulsectl.pulsectl.PulseSinkInfo) -> bool:
+            return bool(sink_input.channel_count > 2)
+
+        def new(ev: pulsectl.pulsectl.PulseEventInfo) -> bool:
+            return bool(ev.t == pulsectl.PulseEventTypeEnum.new)
+
+        def changed(ev: pulsectl.pulsectl.PulseEventInfo) -> bool:
+            return bool(ev.t == pulsectl.PulseEventTypeEnum.change)
+
+        def removed(ev: pulsectl.pulsectl.PulseEventInfo) -> bool:
+            return bool(ev.t == pulsectl.PulseEventTypeEnum.remove)
+
+        def is_sink_input(ev: pulsectl.pulsectl.PulseEventInfo) -> bool:
+            return bool(ev.facility == pulsectl.PulseEventFacilityEnum.sink_input)
+
+        def is_sink(ev: pulsectl.pulsectl.PulseEventInfo) -> bool:
+            return bool(ev.facility == pulsectl.PulseEventFacilityEnum.sink)
+
+        def is_card(ev: pulsectl.pulsectl.PulseEventInfo) -> bool:
+            return bool(ev.facility == pulsectl.PulseEventFacilityEnum.card)
+
+        if is_sink(ev):
+            if changed(ev):
+                if ev.index in self.sink_cache:
+                    del self.sink_cache[ev.index]
+            if removed(ev):
+                if ev.index in self.sink_cache:
+                    del self.sink_cache[ev.index]
+                if ev.index in self.multichannel_sink_inputs:
+                    del self.multichannel_sink_inputs[ev.index]
+
+        elif is_card(ev):
+            if changed(ev):
+                if ev.index in self.card_cache:
+                    del self.card_cache[ev.index]
+            if removed(ev):
+                if ev.index in self.card_cache:
+                    del self.card_cache[ev.index]
+                if ev.index in self.saved_card_profiles:
+                    del self.saved_card_profiles[ev.index]
+
+        elif is_sink_input(ev):
+            # Clear the index from all input slots preemptively.
+            for sink, sink_input_indexes in self.multichannel_sink_inputs.items():
+                if ev.index in sink_input_indexes:
+                    sink_input_indexes.remove(ev.index)
+            if new(ev) or changed(ev):
+                sink_input = self.get_sink_input(ev.index)
+                if not sink_input:
+                    # print("Sink input #%s is gone, weird" % ev.index)
+                    pass
+                elif is_multichannel(sink_input):
+                    # (Re-)add the index to the corresponding card.
+                    self.multichannel_sink_inputs[sink_input.sink].add(ev.index)
+                    self.apply_sink_changes()
+
+    def apply_sink_changes(self) -> None:
+        for sink_index, sink_input_indexes in self.multichannel_sink_inputs.items():
+            sink = self.get_sink(sink_index)
+            if sink is None:
+                continue
+            card = self.get_card(sink.card)
+            if card is None:
+                continue
+
+            profiles = [x for x in card.profile_list if x.available]
+            surround_profiles = [x for x in profiles if "surround" in x.name]
+            if len(profiles) < 2:
+                # This card does not have a profile to switch from/to.
+                continue
+            if len(surround_profiles) < 1:
+                # This card does not have surround profiles available.
+                continue
+
+            is_currently_multichannel = "surround" in card.profile_active.name
+            wants_multichannel = True if sink_input_indexes else False
+            if not is_currently_multichannel and wants_multichannel:
+                # Switch TO multichannel.
+                old_profile = card.profile_active
+                new_profile = surround_profiles[0]
+                if card.index not in self.saved_card_profiles:
+                    self.saved_card_profiles[card.index] = old_profile
+                print(
+                    "Switching %s from %s to %s"
+                    % (card.name, old_profile.description, new_profile.description),
+                    file=sys.stderr,
+                )
+                self.pulse.card_profile_set(card, new_profile.name)
+            elif is_currently_multichannel and not wants_multichannel:
+                # Switch FROM multichannel to prior profile.
+                if card.index not in self.saved_card_profiles:
+                    print(
+                        "No known old profile to restore the %s to." % (card.name),
+                        file=sys.stderr,
+                    )
+                else:
+                    old_profile = card.profile_active
+                    new_profile = self.saved_card_profiles[card.index]
+                    del self.saved_card_profiles[card.index]
+                    print(
+                        "Switching %s from %s to %s"
+                        % (card.name, old_profile.description, new_profile.description),
+                        file=sys.stderr,
+                    )
+                    self.pulse.card_profile_set(card, new_profile.name)
+
+    def run(self) -> None:
+        def queue_event(ev: pulsectl.pulsectl.PulseEventInfo) -> None:
+            self.event_queue.append(ev)
+            raise pulsectl.PulseLoopStop()
+
+        with pulsectl.Pulse("pautosurround") as pulse:
+            self.pulse = pulse
+            pulse.event_mask_set("all")
+            pulse.event_callback_set(lambda ev: queue_event(ev))
+            need_delayed_apply_sink_changes = False
+            while True:
+                pulse.event_listen(timeout=5)
+                if len(self.event_queue):
+                    need_delayed_apply_sink_changes = True
+                    while len(self.event_queue):
+                        self.process_event(self.event_queue.popleft())
+                elif need_delayed_apply_sink_changes:
+                    self.apply_sink_changes()
+                    need_delayed_apply_sink_changes = False
+
+
+def main() -> None:
+    a = AutoSurrounder()
+    a.run()
+
+
+if __name__ == "__main__":
+    main()

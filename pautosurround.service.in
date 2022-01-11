@@ -1,0 +1,13 @@
+[Unit]
+Description=Automatic surround selector for PulseAudio
+After=pulseaudio.service
+BindsTo=pulseaudio.service
+ConditionUser=!root
+
+[Service]
+ExecStart=@BINDIR@/pautosurround
+Restart=on-failure
+Type=simple
+
+[Install]
+WantedBy=pulseaudio.service
