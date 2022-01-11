@@ -11,7 +11,7 @@ to 5.1 multichannel, so that the receiver can play each discrete channel without
 
 The application does nothing with sound outputs with no surround sound output profiles.
 
-[You'll find more info about the software here]().
+[You'll find more info about the software here](https://rudd-o.com/linux-and-free-software/initial-release-of-pautosurround-automatic-multichannel-audio-from-pulseaudio).
 
 ## Intro
 
