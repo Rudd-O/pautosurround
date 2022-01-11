@@ -16,6 +16,7 @@ BuildRequires:  python3-mypy
 BuildRequires:  systemd-rpm-macros
 
 Requires: python3-pulsectl
+Requires: pulseaudio
 
 %description
 This program creates
