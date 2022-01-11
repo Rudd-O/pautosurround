@@ -11,6 +11,23 @@ to 5.1 multichannel, so that the receiver can play each discrete channel without
 
 The application does nothing with sound outputs with no surround sound output profiles.
 
+[You'll find more info about the software here]().
+
+## Intro
+
+Many people have been, through fortune or hard work, blessed with the opportunity to have a home cinema.
+
+Quite a few of those people run an HTPC with Linux (and PulseAudio) on it.  This HTPC tends to be connected — through either HDMI or a multichannel sound card — to an advanced receiver or home theater system, with support for multichannel audio (5.1, 7.1 or more).
+
+If you are fortunate enough to find yourself in this scenario, PulseAudio is fantastic for you.  Through the PulseAudio volume control, it lets you select whether you want your audio to be stereo, or 5.1, or 7.1.  When listening to tunes, you select stereo, and enjoy your home theater's intelligent upmixing of sound.  When watching movies, you select 5.1 or 7.1, and the receiver gets the full multichannel signal from your favorite media player.
+
+As long as you remember to switch to the appropriate profile, you should be good.  But, if you don't, well, things don't sound very well:
+
+* If you play stereo music in multichannel mode, the receiver thinks it's getting multichannel sound, and so it can't intelligently upmix or do Dolby Pro Logic.
+* If you play movies in stereo mode, the receiver doesn't get all the channels — you might miss the center channel, the surround sounds will be faked, and you'll get no subwoofer / LFE signal either.
+
+Come to think of it, that's a bit of a bother.  Shouldn't the profile be automatic?  After all, the media player already knows it's either playing stereo sound or multichannel sound.  You already know the computer is connected to a multichannel receiver.  Why can't the computer know to select the appropriate output mode?
+
 ## Usage
 
 There is nothing you need to do, really.  You can use the PulseAudio Volume Control
@@ -24,6 +41,12 @@ few seconds.
 
 Build the package using `make rpm`, then install on your system, then restart your
 desktop user session.
+
+## Bugs
+
+Currently, the multichannel profile that will be autoselected is the highest-priority
+multichannel profile that is available.  This usually is 5.1.  If you want 7.1, well,
+that's a bug (or rather, the lack of a feature) I haven't fixed yet.
 
 ## License
 
