@@ -1,0 +1,3 @@
+# Enable the PulseAudio automatic surround service by default.
+# This service only starts if PulseAudio itself starts.
+enable pautosurround.service

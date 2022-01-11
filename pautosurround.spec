@@ -26,7 +26,7 @@ This program creates
 
 %build
 # variables must be kept in sync with install
-make DESTDIR=$RPM_BUILD_ROOT BINDIR=%{_bindir} UNITDIR=%{_userunitdir}
+make DESTDIR=$RPM_BUILD_ROOT BINDIR=%{_bindir} UNITDIR=%{_userunitdir} PRESETDIR=%{_userpresetdir}
 
 %check
 make check
@@ -34,11 +34,12 @@ make check
 %install
 rm -rf $RPM_BUILD_ROOT
 # variables must be kept in sync with build
-make install DESTDIR=$RPM_BUILD_ROOT BINDIR=%{_bindir} UNITDIR=%{_userunitdir}
+make install DESTDIR=$RPM_BUILD_ROOT BINDIR=%{_bindir} UNITDIR=%{_userunitdir} PRESETDIR=%{_userpresetdir}
 
 %files
 %attr(0755, root, root) %{_bindir}/%{name}
 %config %attr(0644, root, root) %{_userunitdir}/%{name}.service
+%config %attr(0644, root, root) %{_userpresetdir}/80-%{name}.preset
 %doc README.md
 
 %post

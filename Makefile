@@ -1,5 +1,6 @@
 BINDIR=/usr/local/bin
 UNITDIR=/etc/systemd/user
+PRESETDIR=/etc/systemd/user-preset
 DESTDIR=
 PROGNAME=pautosurround
 
@@ -32,5 +33,6 @@ install-prog:
 
 install-unit: $(PROGNAME).service
 	install -Dm 644 $(PROGNAME).service -t $(DESTDIR)/$(UNITDIR)/
+	install -Dm 644 80-$(PROGNAME).preset -t $(DESTDIR)/$(PRESETDIR)/
 
 install: install-prog install-unit
