@@ -28,7 +28,7 @@ srpm: dist
 $(PROGNAME).service: $(PROGNAME).service.in
 	sed 's|@BINDIR@|$(BINDIR)|g' < $< > $@
 
-$(PROGNAME)-pulse.service: $(PROGNAME).service.in
+$(PROGNAME)-pulse.service: $(PROGNAME)-pulse.service.in
 	sed 's|@BINDIR@|$(BINDIR)|g' < $< > $@
 
 install-prog:

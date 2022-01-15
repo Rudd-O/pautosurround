@@ -3,7 +3,7 @@
 %define mybuildnumber %{?build_number}%{?!build_number:1}
 
 Name:           pautosurround
-Version:        0.0.3
+Version:        0.0.4
 Release:        %{mybuildnumber}%{?dist}
 Summary:        Companion for PulseAudio and PipeWire to automatically set outputs to multichannel when multichannel content is played.
 
