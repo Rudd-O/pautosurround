@@ -28,11 +28,15 @@ srpm: dist
 $(PROGNAME).service: $(PROGNAME).service.in
 	sed 's|@BINDIR@|$(BINDIR)|g' < $< > $@
 
+$(PROGNAME)-pulse.service: $(PROGNAME).service.in
+	sed 's|@BINDIR@|$(BINDIR)|g' < $< > $@
+
 install-prog:
 	install -Dm 755 $(PROGNAME) -t $(DESTDIR)/$(BINDIR)/
 
-install-unit: $(PROGNAME).service
+install-unit: $(PROGNAME).service $(PROGNAME)-pulse.service
 	install -Dm 644 $(PROGNAME).service -t $(DESTDIR)/$(UNITDIR)/
+	install -Dm 644 $(PROGNAME)-pulse.service -t $(DESTDIR)/$(UNITDIR)/
 	install -Dm 644 80-$(PROGNAME).preset -t $(DESTDIR)/$(PRESETDIR)/
 
 install: install-prog install-unit

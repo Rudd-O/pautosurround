@@ -3,13 +3,15 @@
 %define mybuildnumber %{?build_number}%{?!build_number:1}
 
 Name:           pautosurround
-Version:        0.0.2
+Version:        0.0.3
 Release:        %{mybuildnumber}%{?dist}
 Summary:        Companion for PulseAudio and PipeWire to automatically set outputs to multichannel when multichannel content is played.
 
 License:        GPLv2+
 URL:            https://github.com/Rudd-O/%{name}
 Source0:        https://github.com/Rudd-O/%{name}/archive/{%version}.tar.gz#/%{name}-%{version}.tar.gz
+
+BuildArch: noarch
 
 BuildRequires:  make
 BuildRequires:  python3-mypy
@@ -39,6 +41,7 @@ make install DESTDIR=$RPM_BUILD_ROOT BINDIR=%{_bindir} UNITDIR=%{_userunitdir} P
 %files
 %attr(0755, root, root) %{_bindir}/%{name}
 %config %attr(0644, root, root) %{_userunitdir}/%{name}.service
+%config %attr(0644, root, root) %{_userunitdir}/%{name}-pulse.service
 %config %attr(0644, root, root) %{_userpresetdir}/80-%{name}.preset
 %doc README.md
 

@@ -1,7 +1,7 @@
 [Unit]
-Description=Automatic surround selector for PulseAudio
-After=pipewire-pulse.service pulseaudio.service
-BindsTo=pipewire-pulse.service pulseaudio.service
+Description=Automatic surround selector for PipeWire
+After=pipewire-pulse.service
+BindsTo=pipewire-pulse.service
 ConditionUser=!root
 
 [Service]
@@ -10,4 +10,4 @@ Restart=on-failure
 Type=simple
 
 [Install]
-WantedBy=pipewire-pulse.service pulseaudio.service
+WantedBy=pipewire-pulse.service
