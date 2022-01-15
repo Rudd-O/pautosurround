@@ -3,9 +3,9 @@
 %define mybuildnumber %{?build_number}%{?!build_number:1}
 
 Name:           pautosurround
-Version:        0.0.1
+Version:        0.0.2
 Release:        %{mybuildnumber}%{?dist}
-Summary:        Companion for PulseAudio to automatically set outputs to multichannel when multichannel content is played.
+Summary:        Companion for PulseAudio and PipeWire to automatically set outputs to multichannel when multichannel content is played.
 
 License:        GPLv2+
 URL:            https://github.com/Rudd-O/%{name}
@@ -16,10 +16,10 @@ BuildRequires:  python3-mypy
 BuildRequires:  systemd-rpm-macros
 
 Requires: python3-pulsectl
-Requires: pulseaudio
+Requires: pulseaudio-daemon
 
 %description
-This program creates
+This program auto-switches your sound card to surround when surround content plays.
 
 %prep
 %setup -q

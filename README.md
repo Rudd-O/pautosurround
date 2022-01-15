@@ -1,7 +1,8 @@
-# Automatic multichannel outputs for PulseAudio
+# Automatic multichannel outputs for PipeWire and PulseAudio
 
-This companion to PulseAudio automatically selects multichannel output profiles for cards
-that support them, if the content that is playing back has more than stereo channels.
+This companion to PipeWire and PulseAudio automatically selects multichannel output
+profiles for cards that support them, if the content that is playing back has more
+than just stereo channels.
 
 This helps anyone whose computer is connected to a receiver or preprocessor via HDMI,
 such that the receiver does advanced stereo surround audio processing.  When stereo
@@ -17,7 +18,7 @@ The application does nothing with sound outputs with no surround sound output pr
 
 Many people have been, through fortune or hard work, blessed with the opportunity to have a home cinema.
 
-Quite a few of those people run an HTPC with Linux (and PulseAudio) on it.  This HTPC tends to be connected — through either HDMI or a multichannel sound card — to an advanced receiver or home theater system, with support for multichannel audio (5.1, 7.1 or more).
+Quite a few of those people run an HTPC with Linux (and PulseAudio / PipeWire — PulseAudio henceforth) on it.  This HTPC tends to be connected — through either HDMI or a multichannel sound card — to an advanced receiver or home theater system, with support for multichannel audio (5.1, 7.1 or more).
 
 If you are fortunate enough to find yourself in this scenario, PulseAudio is fantastic for you.  Through the PulseAudio volume control, it lets you select whether you want your audio to be stereo, or 5.1, or 7.1.  When listening to tunes, you select stereo, and enjoy your home theater's intelligent upmixing of sound.  When watching movies, you select 5.1 or 7.1, and the receiver gets the full multichannel signal from your favorite media player.
 

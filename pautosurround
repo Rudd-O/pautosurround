@@ -4,10 +4,17 @@
 from typing import Deque, Dict
 
 import collections
+import logging
 import os
 import sys
 
-import pulsectl # type: ignore
+import pulsectl  # type: ignore
+
+
+logger = logging.getLogger(os.path.basename(__file__))
+warn = logger.warn
+info = logger.info
+debug = logger.debug
 
 
 class AutoSurrounder(object):
@@ -39,7 +46,7 @@ class AutoSurrounder(object):
         res = [x for x in self.pulse.sink_input_list() if x.index == sink_input_index]
         return res[0] if res else None
 
-    def process_event(self, ev: pulsectl.pulsectl.PulseEventInfo) -> None:
+    def process_event(self, ev: pulsectl.pulsectl.PulseEventInfo) -> bool:
         def is_multichannel(sink_input: pulsectl.pulsectl.PulseSinkInfo) -> bool:
             return bool(sink_input.channel_count > 2)
 
@@ -60,6 +67,8 @@ class AutoSurrounder(object):
 
         def is_card(ev: pulsectl.pulsectl.PulseEventInfo) -> bool:
             return bool(ev.facility == pulsectl.PulseEventFacilityEnum.card)
+
+        has_multichannel_appeared = False
 
         if is_sink(ev):
             if changed(ev):
@@ -83,37 +92,59 @@ class AutoSurrounder(object):
 
         elif is_sink_input(ev):
             # Clear the index from all input slots preemptively.
-            for sink, sink_input_indexes in self.multichannel_sink_inputs.items():
-                if ev.index in sink_input_indexes:
-                    sink_input_indexes.remove(ev.index)
             if new(ev) or changed(ev):
                 sink_input = self.get_sink_input(ev.index)
-                if not sink_input:
-                    # print("Sink input #%s is gone, weird" % ev.index)
+                if sink_input:
+                    sink = self.get_sink(sink_input.sink)
+                    if sink:
+                        if is_multichannel(sink_input):
+                            # (Re-)add the index to the corresponding card.
+                            self.multichannel_sink_inputs[sink_input.sink].add(ev.index)
+                            has_multichannel_appeared = True
+                    else:
+                        # print(
+                        #    "Sink #%s has no sink %s, weird"
+                        #    % (ev.index, sink_input.sink),
+                        #    file=sys.stderr,
+                        # )
+                        self.evict_sink_input(ev.index)
+                else:
                     pass
-                elif is_multichannel(sink_input):
-                    # (Re-)add the index to the corresponding card.
-                    self.multichannel_sink_inputs[sink_input.sink].add(ev.index)
-                    self.apply_sink_changes()
+                    # print("Sink input #%s has vanished, weird" % ev.index, file=sys.stderr)
+            elif removed(ev):
+                # print("Sink input #%s is gone" % ev.index, file=sys.stderr)
+                self.evict_sink_input(ev.index)
+
+        return has_multichannel_appeared
+
+    def evict_sink_input(self, sink_input_index: int) -> None:
+        for sink, sink_input_indexes in self.multichannel_sink_inputs.items():
+            if sink_input_index in sink_input_indexes:
+                sink_input_indexes.remove(sink_input_index)
 
     def apply_sink_changes(self) -> None:
         for sink_index, sink_input_indexes in self.multichannel_sink_inputs.items():
             sink = self.get_sink(sink_index)
             if sink is None:
+                # print("Sink %s is none, weird" % sink_index)
                 continue
             card = self.get_card(sink.card)
             if card is None:
+                # print("Card %s is none, weird" % sink.card)
                 continue
 
             profiles = [x for x in card.profile_list if x.available]
             surround_profiles = [x for x in profiles if "surround" in x.name]
             if len(profiles) < 2:
                 # This card does not have a profile to switch from/to.
+                # print("No profiles to switch from/to")
                 continue
             if len(surround_profiles) < 1:
+                # print("No surround profiles")
                 # This card does not have surround profiles available.
                 continue
 
+            # print("Decision time", card, card.profile_active.name)
             is_currently_multichannel = "surround" in card.profile_active.name
             wants_multichannel = True if sink_input_indexes else False
             if not is_currently_multichannel and wants_multichannel:
@@ -122,27 +153,24 @@ class AutoSurrounder(object):
                 new_profile = surround_profiles[0]
                 if card.index not in self.saved_card_profiles:
                     self.saved_card_profiles[card.index] = old_profile
-                print(
+                info(
                     "Switching %s from %s to %s"
                     % (card.name, old_profile.description, new_profile.description),
-                    file=sys.stderr,
                 )
                 self.pulse.card_profile_set(card, new_profile.name)
             elif is_currently_multichannel and not wants_multichannel:
                 # Switch FROM multichannel to prior profile.
                 if card.index not in self.saved_card_profiles:
-                    print(
+                    warn(
                         "No known old profile to restore the %s to." % (card.name),
-                        file=sys.stderr,
                     )
                 else:
                     old_profile = card.profile_active
                     new_profile = self.saved_card_profiles[card.index]
                     del self.saved_card_profiles[card.index]
-                    print(
+                    info(
                         "Switching %s from %s to %s"
                         % (card.name, old_profile.description, new_profile.description),
-                        file=sys.stderr,
                     )
                     self.pulse.card_profile_set(card, new_profile.name)
 
@@ -155,16 +183,20 @@ class AutoSurrounder(object):
             self.pulse = pulse
             pulse.event_mask_set("all")
             pulse.event_callback_set(lambda ev: queue_event(ev))
-            need_delayed_apply_sink_changes = False
             while True:
+                mc_events = False
+                timed_out = True
                 pulse.event_listen(timeout=5)
-                if len(self.event_queue):
-                    need_delayed_apply_sink_changes = True
-                    while len(self.event_queue):
-                        self.process_event(self.event_queue.popleft())
-                elif need_delayed_apply_sink_changes:
+                while len(self.event_queue):
+                    timed_out = False
+                    ev = self.event_queue.popleft()
+                    mc_events = self.process_event(ev) or mc_events
+                if mc_events or timed_out:
+                    debug(
+                        "Multichannel appeared: %s, timed out: %s"
+                        % (mc_events, timed_out),
+                    )
                     self.apply_sink_changes()
-                    need_delayed_apply_sink_changes = False
 
 
 def main() -> None:
