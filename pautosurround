@@ -6,7 +6,6 @@ from typing import Deque, Dict
 import collections
 import logging
 import os
-import sys
 
 import pulsectl  # type: ignore
 
@@ -28,13 +27,13 @@ class AutoSurrounder(object):
         self.card_cache: Dict[int, pulsectl.pulsectl.PulseCardInfo] = {}
         self.saved_card_profiles: Dict[int, pulsectl.pulsectl.PulseCardProfileInfo] = {}
 
-    def get_sink(self, sink_index: int) -> pulsectl.pulsectl.PulseSinkInfo:
+    def get_sink(self, sink_index: int) -> pulsectl.pulsectl.PulseSinkInfo | None:
         if sink_index not in self.sink_cache:
             for x in self.pulse.sink_list():
                 self.sink_cache[x.index] = x
         return self.sink_cache.get(sink_index)
 
-    def get_card(self, card_index: int) -> pulsectl.pulsectl.PulseCardInfo:
+    def get_card(self, card_index: int) -> pulsectl.pulsectl.PulseCardInfo | None:
         if card_index not in self.card_cache:
             for x in self.pulse.card_list():
                 self.card_cache[x.index] = x
@@ -42,7 +41,7 @@ class AutoSurrounder(object):
 
     def get_sink_input(
         self, sink_input_index: int
-    ) -> pulsectl.pulsectl.PulseSinkInputInfo:
+    ) -> pulsectl.pulsectl.PulseSinkInputInfo | None:
         res = [x for x in self.pulse.sink_input_list() if x.index == sink_input_index]
         return res[0] if res else None
 
@@ -110,7 +109,8 @@ class AutoSurrounder(object):
                         self.evict_sink_input(ev.index)
                 else:
                     pass
-                    # print("Sink input #%s has vanished, weird" % ev.index, file=sys.stderr)
+                    # print("Sink input #%s has vanished, weird" % ev.index,
+                    #       file=sys.stderr)
             elif removed(ev):
                 # print("Sink input #%s is gone" % ev.index, file=sys.stderr)
                 self.evict_sink_input(ev.index)
@@ -118,12 +118,15 @@ class AutoSurrounder(object):
         return has_multichannel_appeared
 
     def evict_sink_input(self, sink_input_index: int) -> None:
-        for sink, sink_input_indexes in self.multichannel_sink_inputs.items():
+        for unused_sink, sink_input_indexes in self.multichannel_sink_inputs.items():
             if sink_input_index in sink_input_indexes:
                 sink_input_indexes.remove(sink_input_index)
 
-    def apply_sink_changes(self) -> None:
-        for sink_index, sink_input_indexes in self.multichannel_sink_inputs.items():
+    def apply_card_profile_changes(self) -> None:
+        cards_multichannel: Dict[
+            pulsectl.PulseCardInfo, bool
+        ] = collections.defaultdict(bool)
+        for sink_index, mc_input_indexes in self.multichannel_sink_inputs.items():
             sink = self.get_sink(sink_index)
             if sink is None:
                 # print("Sink %s is none, weird" % sink_index)
@@ -132,7 +135,18 @@ class AutoSurrounder(object):
             if card is None:
                 # print("Card %s is none, weird" % sink.card)
                 continue
+            debug(
+                "Sink %s (%s) of card %s has these multichannel sink inputs: %s",
+                sink,
+                sink_index,
+                card,
+                mc_input_indexes,
+            )
+            cards_multichannel[card] = (
+                bool(mc_input_indexes) or cards_multichannel[card]
+            )
 
+        for card, needs_multichannel in cards_multichannel.items():
             profiles = [x for x in card.profile_list if x.available]
             surround_profiles = [x for x in profiles if "surround" in x.name]
             if len(profiles) < 2:
@@ -144,10 +158,8 @@ class AutoSurrounder(object):
                 # This card does not have surround profiles available.
                 continue
 
-            # print("Decision time", card, card.profile_active.name)
             is_currently_multichannel = "surround" in card.profile_active.name
-            wants_multichannel = True if sink_input_indexes else False
-            if not is_currently_multichannel and wants_multichannel:
+            if not is_currently_multichannel and needs_multichannel:
                 # Switch TO multichannel.
                 old_profile = card.profile_active
                 new_profile = surround_profiles[0]
@@ -158,7 +170,7 @@ class AutoSurrounder(object):
                     % (card.name, old_profile.description, new_profile.description),
                 )
                 self.pulse.card_profile_set(card, new_profile.name)
-            elif is_currently_multichannel and not wants_multichannel:
+            elif is_currently_multichannel and not needs_multichannel:
                 # Switch FROM multichannel to prior profile.
                 if card.index not in self.saved_card_profiles:
                     warn(
@@ -181,25 +193,43 @@ class AutoSurrounder(object):
 
         with pulsectl.Pulse("pautosurround") as pulse:
             self.pulse = pulse
-            pulse.event_mask_set("all")
+            pulse.event_mask_set(
+                pulsectl.PulseEventMaskEnum.card,
+                pulsectl.PulseEventMaskEnum.sink,
+                pulsectl.PulseEventMaskEnum.sink_input,
+            )
             pulse.event_callback_set(lambda ev: queue_event(ev))
+            short_timeout = 2
+            long_timeout = 30
+            timeout = long_timeout
             while True:
-                mc_events = False
+                multichannel_appeared = False
                 timed_out = True
-                pulse.event_listen(timeout=5)
+                pulse.event_listen(timeout=timeout)
                 while len(self.event_queue):
                     timed_out = False
                     ev = self.event_queue.popleft()
-                    mc_events = self.process_event(ev) or mc_events
-                if mc_events or timed_out:
+                    multichannel_appeared = (
+                        self.process_event(ev) or multichannel_appeared
+                    )
+                if multichannel_appeared or timed_out:
                     debug(
                         "Multichannel appeared: %s, timed out: %s"
-                        % (mc_events, timed_out),
+                        % (multichannel_appeared, timed_out),
                     )
-                    self.apply_sink_changes()
+                    self.apply_card_profile_changes()
+                if multichannel_appeared:
+                    # Ensure the timeout is shortened to restore cards to
+                    # stereo faster.
+                    timeout = short_timeout
+                elif timed_out:
+                    # Lengthen the future timeout to avoid spending
+                    # CPU resources on processing events.
+                    timeout = long_timeout
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.DEBUG if os.getenv("DEBUG") else logging.INFO)
     a = AutoSurrounder()
     a.run()
 
